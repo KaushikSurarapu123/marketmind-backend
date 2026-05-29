@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MarketMind Premium</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #f0efe9;
+      --surface:   #ffffff;
+      --surface2:  #f7f7f5;
+      --border:    rgba(0,0,0,0.10);
+      --border-md: rgba(0,0,0,0.20);
+      --text:      #1a1a18;
+      --text2:     #5f5e5a;
+      --text3:     #999894;
+      --blue:      #378ADD;
+      --blue-dk:   #0C447C;
+      --blue-lt:   #E6F1FB;
+      --green:     #3B6D11;
+      --green-lt:  #EAF3DE;
+      --green-md:  #639922;
+      --red:       #A32D2D;
+      --red-lt:    #FCE8E6;
+      --amber:     #BA7517;
+      --amber-lt:  #FAEEDA;
+      --purple-lt: #EEEDFE;
+      --purple-dk: #3C3489;
+      --radius:    10px;
+      --radius-lg: 14px;
+    }
+
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    .screen { display: none; min-height: 100vh; }
+    .screen.active { display: flex; }
+
+    /* ── Join Screen ── */
+    #screen-join { align-items: center; justify-content: center; padding: 2rem; }
+
+    .join-box {
+      background: var(--surface);
+      border: 0.5px solid var(--border-md);
+      border-radius: var(--radius-lg);
+      padding: 2.5rem 2rem;
+      width: 100%; max-width: 400px;
+      text-align: center;
+    }
+
+    .logo { font-family: 'Space Mono', monospace; font-size: 28px; font-weight: 700; letter-spacing: -1px; }
+    .logo span { color: var(--blue); }
+    .logo-sub { font-size: 12px; color: var(--text3); font-family: 'Space Mono', monospace; letter-spacing: 0.04em; margin-top: 3px; margin-bottom: 2rem; }
+
+    .code-input-wrap { margin-bottom: 1rem; }
+    .code-input-wrap label { display: block; font-size: 11px; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text2); margin-bottom: 8px; text-align: left; }
+
+    #inp-code {
+      width: 100%;
+      font-family: 'Space Mono', monospace;
+      font-size: 36px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-align: center;
+      padding: 16px 10px;
+      background: var(--surface2);
+      border: 2px solid var(--border-md);
+      border-radius: var(--radius);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #inp-code:focus { border-color: var(--blue); background: #fff; }
+    #inp-code::placeholder { color: var(--text3); letter-spacing: 0.12em; }
+
+    .field { margin-bottom: 1rem; text-align: left; }
+    .field label { display: block; font-size: 11px; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text2); margin-bottom: 6px; }
+    .field input {
+      width: 100%; padding: 10px 14px;
+      font-family: 'Space Mono', monospace; font-size: 13px;
+      background: var(--surface2); border: 0.5px solid var(--border-md);
+      border-radius: var(--radius); color: var(--text); outline: none;
+      transition: border-color 0.15s;
+    }
+    .field input:focus { border-color: var(--blue); background: #fff; }
+
+    .divider { display: flex; align-items: center; gap: 10px; margin: 1.25rem 0; }
+    .divider-line { flex: 1; height: 0.5px; background: var(--border-md); }
+    .divider-text { font-size: 11px; color: var(--text3); font-family: 'Space Mono', monospace; }
+
+    .host-box {
+      background: var(--surface2);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      text-align: left;
+    }
+    .host-box-title { font-size: 11px; font-family: 'Space Mono', monospace; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text2); margin-bottom: 4px; }
+    .host-box-desc  { font-size: 12px; color: var(--text3); margin-bottom: 10px; }
+
+    .btn {
+      width: 100%; padding: 11px;
+      font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.05em;
+      background: var(--text); color: #fff;
+      border: none; border-radius: var(--radius); cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.8; }
+    .btn:active { opacity: 0.6; }
+    .btn:disabled { opacity: 0.3; cursor: default; }
+    .btn.green  { background: var(--green); }
+    .btn.blue   { background: var(--blue); }
+    .btn.red    { background: var(--red); }
+    .btn.purple { background: var(--purple-dk); }
+    .btn.sm     { width: auto; padding: 7px 16px; font-size: 11px; }
+    .btn.outline { background: transparent; color: var(--text); border: 1px solid var(--border-md); }
+    .btn.outline:hover { background: var(--surface2); }
+
+    .error-msg { font-size: 12px; color: var(--red); font-family: 'Space Mono', monospace; margin-top: 8px; min-height: 18px; text-align: left; }
+
+    /* ── Host Screen ── */
+    #screen-host { align-items: center; justify-content: center; padding: 2rem; }
+
+    .host-card {
+      background: var(--surface);
+      border: 0.5px solid var(--border-md);
+      border-radius: var(--radius-lg);
+      padding: 2.5rem 2rem;
+      width: 100%; max-width: 420px;
+      text-align: center;
+    }
+    .host-card-title { font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text2); margin-bottom: 12px; }
+    .big-code { font-family: 'Space Mono', monospace; font-size: 64px; font-weight: 700; letter-spacing: 0.15em; color: var(--blue); margin-bottom: 8px; line-height: 1; }
+    .host-instruction { font-size: 13px; color: var(--text2); margin-bottom: 1.5rem; }
+    .host-name-row { display: flex; gap: 8px; margin-bottom: 1rem; }
+    .host-name-row input { flex: 1; padding: 10px 14px; font-family: 'Space Mono', monospace; font-size: 13px; background: var(--surface2); border: 0.5px solid var(--border-md); border-radius: var(--radius); color: var(--text); outline: none; }
+
+    /* ── Lobby ── */
+    #screen-lobby { flex-direction: column; padding: 2rem 1.5rem; max-width: 860px; margin: 0 auto; width: 100%; gap: 1.25rem; }
+    .lobby-header { display: flex; align-items: flex-end; justify-content: space-between; padding-bottom: 1rem; border-bottom: 0.5px solid var(--border); }
+    .code-pill { font-family: 'Space Mono', monospace; font-size: 22px; font-weight: 700; letter-spacing: 0.12em; color: var(--blue); background: var(--blue-lt); padding: 4px 16px; border-radius: 99px; }
+    .section-title { font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text2); }
+
+    .chars-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+    .char-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px; cursor: pointer; position: relative; transition: all 0.15s; }
+    .char-card:hover:not(.selected) { border-color: var(--border-md); box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+    .char-card.selected { border-color: var(--char-color, var(--blue)); box-shadow: 0 0 0 3px rgba(55,138,221,0.25); background: var(--char-bg); }
+    .char-emoji { font-size: 32px; margin-bottom: 8px; }
+    .char-name  { font-family: 'Space Mono', monospace; font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .char-desc  { font-size: 12px; color: var(--text2); margin-bottom: 8px; line-height: 1.4; }
+    .char-bonus { font-size: 11px; color: var(--char-color, var(--blue)); font-family: 'Space Mono', monospace; background: rgba(0,0,0,0.04); padding: 4px 8px; border-radius: 6px; line-height: 1.4; }
+
+    .players-list { display: flex; flex-direction: column; gap: 8px; }
+    .player-row   { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+    .player-emoji { font-size: 20px; width: 28px; text-align: center; }
+    .player-name  { font-weight: 600; font-size: 14px; flex: 1; }
+    .player-char  { font-size: 12px; color: var(--text2); font-family: 'Space Mono', monospace; }
+    .ready-badge  { font-size: 10px; font-family: 'Space Mono', monospace; font-weight: 700; letter-spacing: 0.04em; padding: 3px 9px; border-radius: 99px; }
+    .ready-badge.yes { background: var(--green-lt); color: var(--green); }
+    .ready-badge.no  { background: var(--surface2); color: var(--text3); }
+
+    /* ── Game Screen ── */
+    #screen-game { flex-direction: column; padding: 1.5rem; max-width: 1100px; margin: 0 auto; width: 100%; gap: 1.25rem; }
+    .game-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 1rem; border-bottom: 0.5px solid var(--border); }
+    .turn-badge { font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; background: var(--text); color: #fff; padding: 5px 14px; border-radius: 99px; }
+    .game-layout { display: grid; grid-template-columns: 1fr 340px; gap: 1.25rem; }
+    @media (max-width: 800px) { .game-layout { grid-template-columns: 1fr; } }
+
+    .panel { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 10px; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 16px; border-bottom: 0.5px solid var(--border); background: var(--surface2); }
+    
+    .news-panel { background: var(--amber-lt); border: 1px solid var(--amber); border-radius: var(--radius); padding: 12px 16px; font-family: 'Space Mono', monospace; font-size: 13px; color: var(--amber); display: flex; align-items: center; gap: 10px; }
+    .news-panel.bust { background: var(--red-lt); border-color: var(--red); color: var(--red); }
+    .news-panel.boom { background: var(--green-lt); border-color: var(--green); color: var(--green); }
+    .news-badge { font-weight: 700; text-transform: uppercase; font-size: 11px; padding: 2px 6px; border-radius: 4px; background: currentColor; color: #fff; }
+
+    .mm-table { width: 100%; border-collapse: collapse; }
+    .mm-table thead th { font-family: 'Space Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text3); padding: 9px 16px 7px; text-align: left; font-weight: 400; }
+    .mm-table thead th.r { text-align: right; }
+    .mm-table tbody tr { border-top: 0.5px solid var(--border); transition: background 0.1s; }
+    .mm-table tbody tr:hover { background: var(--surface2); }
+    .mm-table td { padding: 11px 16px; font-size: 13px; }
+
+    .ticker { font-family: 'Space Mono', monospace; font-weight: 700; font-size: 12px; }
+    .badge  { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 99px; font-family: 'Space Mono', monospace; }
+    .b-tech { background: var(--blue-lt);   color: var(--blue-dk); }
+    .b-hlth { background: var(--green-lt);  color: var(--green); }
+    .b-enrg { background: var(--amber-lt);  color: var(--amber); }
+    .b-util { background: var(--purple-lt); color: var(--purple-dk); }
+
+    .p-up  { color: var(--green); font-family: 'Space Mono', monospace; font-weight: 700; text-align: right; }
+    .p-dn  { color: var(--red);   font-family: 'Space Mono', monospace; font-weight: 700; text-align: right; }
+    .p-neu { color: var(--text);  font-family: 'Space Mono', monospace; font-weight: 700; text-align: right; }
+    .d-up  { color: var(--green); font-family: 'Space Mono', monospace; font-size: 11px; text-align: right; }
+    .d-dn  { color: var(--red);   font-family: 'Space Mono', monospace; font-size: 11px; text-align: right; }
+    .yld   { color: var(--green-md); font-family: 'Space Mono', monospace; font-size: 12px; text-align: right; }
+
+    .trade-form { padding: 14px 16px; border-top: 0.5px solid var(--border); background: var(--surface2); display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+    .trade-form select, .trade-form input[type=number] { font-family: 'Space Mono', monospace; font-size: 12px; padding: 8px 10px; border: 0.5px solid var(--border-md); background: var(--surface); border-radius: var(--radius); color: var(--text); outline: none; }
+    .trade-form select { flex: 1; min-width: 120px; }
+    .trade-form input[type=number] { width: 80px; }
+    .trade-row { display: flex; gap: 8px; }
+
+    .sidebar { display: flex; flex-direction: column; gap: 1.25rem; }
+    .my-portfolio { padding: 14px 16px; }
+    .portfolio-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 0.5px solid var(--border); font-size: 13px; }
+    .portfolio-row:last-child { border-bottom: none; }
+    .port-ticker { font-family: 'Space Mono', monospace; font-weight: 700; font-size: 12px; }
+    .port-shares { font-size: 11px; color: var(--text2); }
+    .port-val { font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; }
+
+    .lb-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 0.5px solid var(--border); font-size: 13px; }
+    .lb-row:last-child { border-bottom: none; }
+    .lb-name { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+    .lb-val { font-family: 'Space Mono', monospace; font-weight: 700; }
+
+    #toast { position: fixed; bottom: 20px; right: 20px; background: var(--text); color: #fff; font-family: 'Space Mono', monospace; font-size: 12px; padding: 12px 20px; border-radius: var(--radius); box-shadow: 0 4px 12px rgba(0,0,0,0.15); opacity: 0; transform: translateY(10px); transition: all 0.2s; pointer-events: none; z-index: 999; }
+    #toast.show { opacity: 1; transform: translateY(0); }
+    #toast.err { background: var(--red); }
+    #toast.success { background: var(--green); }
+  </style>
+</head>
+<body>
+
+  <div class="screen active" id="screen-join">
+    <div class="join-box">
+      <div class="logo">Market<span>Mind</span></div>
+      <div class="logo-sub">MULTIPLAYER STRATEGY v2.0</div>
+
+      <div class="code-input-wrap">
+        <label for="inp-code">6-Digit Room Code</label>
+        <input type="text" id="inp-code" placeholder="000000" maxlength="6">
+      </div>
+
+      <div class="field">
+        <label for="inp-name">Your Name</label>
+        <input type="text" id="inp-name" placeholder="Trader Nick">
+      </div>
+
+      <button class="btn blue" onclick="joinGame()">JOIN GAME ROOM</button>
+      <div class="error-msg" id="join-error"></div>
+
+      <div class="divider">
+        <div class="divider-line"></div>
+        <div class="divider-text">OR ADMIN HOST</div>
+        <div class="divider-line"></div>
+      </div>
+
+      <div class="host-box">
+        <div class="host-box-title">Create New Session</div>
+        <div class="host-box-desc">Generate a room code to host multiplayer matches locally.</div>
+        <button class="btn outline" onclick="setupHostScreen()">HOST A GAME</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-host">
+    <div class="host-card">
+      <div class="host-card-title">Your Room Code</div>
+      <div class="big-code" id="host-code-display">------</div>
+      <div class="host-instruction">Share this code with your players.</div>
+      
+      <div class="field" style="text-align:left">
+        <label for="inp-host-name">Your Admin Name</label>
+        <div class="host-name-row">
+          <input type="text" id="inp-host-name" placeholder="Host Captain">
+          <button class="btn blue sm" onclick="hostJoin()">ENTER LOBBY</button>
+        </div>
+      </div>
+      <div class="error-msg" id="host-error"></div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-lobby">
+    <div class="lobby-header">
+      <div>
+        <div class="logo" style="font-size:20px">Market<span>Mind</span></div>
+        <div style="font-size:12px; color:var(--text3); font-family:'Space Mono',monospace; margin-top:2px">Lobby Setup Room</div>
+      </div>
+      <div class="code-pill" id="lobby-code">------</div>
+    </div>
+
+    <div class="section-title">Choose Your Character Class</div>
+    <div class="chars-grid" id="chars-grid"></div>
+
+    <div id="lobby-players-container">
+      <div class="section-title" style="margin-top: 15px;">Players in Lobby</div>
+      <div class="players-list" id="players-list"></div>
+    </div>
+
+    <div id="lobby-ready-container" style="display:flex; gap:10px; align-items:center; margin-top:15px;">
+      <button class="btn green" id="ready-btn" onclick="readyUp()" disabled>READY UP</button>
+      <div style="font-size:12px; color:var(--text3); font-family:'Space Mono',monospace">
+        Game starts when all players are ready (Minimum 2 players required).
+      </div>
+    </div>
+    <div class="error-msg" id="lobby-error"></div>
+  </div>
+
+  <div class="screen" id="screen-game">
+    <div class="game-header">
+      <div>
+        <div class="logo" style="font-size:22px">Market<span>Mind</span></div>
+        <div id="user-profile-summary" style="font-size:12px; color:var(--text2); margin-top:3px">Connected</div>
+      </div>
+      <div style="display:flex; gap:12px; align-items:center">
+        <div class="turn-badge" id="turn-display">Turn 1</div>
+        <button class="btn outline sm" onclick="advanceTurn()" style="background:#fff">ADVANCE TURN</button>
+      </div>
+    </div>
+
+    <div class="game-layout">
+      <div>
+        <div class="news-panel" id="news-feed-ticker" style="margin-bottom:15px;">
+          <span class="news-badge" id="news-feed-type">FEED</span>
+          <span id="news-feed-text">Loading incoming macro economic data...</span>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="section-title" style="color:var(--text)">Live Asset Quotations</div>
+          </div>
+          <table class="mm-table">
+            <thead>
+              <tr>
+                <th>Asset</th>
+                <th>Sector</th>
+                <th class="r">Price</th>
+                <th class="r">Change</th>
+                <th class="r">Div. Yield</th>
+              </tr>
+            </thead>
+            <tbody id="market-listings-body"></tbody>
+          </table>
+
+          <div class="trade-form">
+            <div style="display:flex; flex-direction:column; gap:6px; flex:1">
+              <label style="font-family:'Space Mono',monospace; font-size:10px; text-transform:uppercase; color:var(--text2)">Target Security</label>
+              <select id="trade-ticker">
+                <option value="">-- Select Asset --</option>
+              </select>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:6px">
+              <label style="font-family:'Space Mono',monospace; font-size:10px; text-transform:uppercase; color:var(--text2)">Shares</label>
+              <input type="number" id="trade-shares" value="10" min="1">
+            </div>
+            <div class="trade-row">
+              <button class="btn green sm" onclick="buy()">BUY LONG</button>
+              <button class="btn red sm" onclick="sell()">SELL SHORT</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="padding:15px;">
+          <div class="section-title" style="margin-bottom:10px;">Character Class Action Capability</div>
+          <p id="power-desc-display" style="font-size:12px; color:var(--text2); margin-bottom:12px;">Select a stock asset in the field dropdown to route your class capacity action utility.</p>
+          <button class="btn purple sm" id="power-trigger-btn" onclick="triggerActivePower()">EXECUTE 1x MATCH ACTIVE POWER</button>
+        </div>
+      </div>
+
+      <div class="sidebar">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="section-title" style="color:var(--text)">Your Balance Sheet</div>
+          </div>
+          <div style="padding:14px 16px; background:var(--surface2); border-bottom:0.5px solid var(--border); display:flex; justify-content:space-between; align-items:baseline">
+            <div style="font-size:12px; color:var(--text2)">Net Portfolio Worth:</div>
+            <div style="font-size:20px; font-weight:700; font-family:'Space Mono',monospace; color:var(--blue-dk)" id="networth-display">$0.00</div>
+          </div>
+          <div style="padding:10px 16px; font-size:13px; display:flex; justify-content:space-between; border-bottom:0.5px solid var(--border)">
+            <div style="color:var(--text2)">Cash Equity Balance:</div>
+            <div style="font-family:'Space Mono',monospace; font-weight:600" id="cash-display">$0.00</div>
+          </div>
+          <div class="my-portfolio" id="my-portfolio-list"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="section-title" style="color:var(--text)">Standings Leaderboard</div>
+          </div>
+          <div id="leaderboard-body"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    // ─── Cloud Deployment Synchronized Routing ───────────────────────────────
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    
+    // INTEGRATED LIVE LINK: Points directly to your deployment when online
+    const BACKEND_URL = isLocal ? 'http://localhost:3000' : 'https://marketmind-backend.onrender.com';
+
+    let socket     = null;
+    let roomCode   = '';
+    let isHost     = false;
+    let myChar     = null;
+
+    const CHAR_META = {
+      Wolf:  { color: '#7C3AED', bg: '#EEEDFE', power: "Short Squeeze: Forces targeted stock price shift upwards +25% next turn loop." },
+      Bear:  { color: '#B45309', bg: '#FAEEDA', power: "Insider Leak: Pay $1,000 cash processing fee to pre-calculate directional trends." },
+      Bull:  { color: '#047857', bg: '#EAF3DE', power: "Hostile Takeover: Completely freeze all trading asset variation on target stock for 1 turn." },
+      Sheep: { color: '#0369A1', bg: '#E6F1FB', power: "Safety Cushion Net: Inject an immediate non-dilutive $2,500 emergency cash injection onto sheet." }
+    };
+
+    const SECTOR_CLASSES = {
+      'Technology':  'b-tech',
+      'Healthcare':  'b-hlth',
+      'Energy':      'b-enrg',
+      'Utilities':   'b-util'
+    };
+
+    function connectSocket() {
+      if (socket) return;
+      socket = io(BACKEND_URL);
+
+      socket.on('room:code', (data) => {
+        roomCode = data.roomCode;
+        document.getElementById('host-code-display').textContent = roomCode;
+        document.getElementById('lobby-code').textContent = roomCode;
+      });
+
+      socket.on('lobby:error', ({ message }) => {
+        document.getElementById('join-error').textContent = message;
+        document.getElementById('host-error').textContent = message;
+        document.getElementById('lobby-error').textContent = message;
+      });
+
+      socket.on('lobby:update', ({ players, roomCode: rc }) => {
+        if (rc) {
+          roomCode = rc;
+          document.getElementById('lobby-code').textContent = rc;
+          document.getElementById('host-code-display').textContent = rc;
+        }
+
+        const currentScreen = document.querySelector('.screen.active')?.id;
+        if (currentScreen === 'screen-join' && !isHost) {
+          showScreen('lobby');
+        }
+        renderLobby(players);
+      });
+
+      socket.on('game:started', () => {
+        showScreen('game');
+        if (myChar) {
+          document.getElementById('power-desc-display').textContent = CHAR_META[myChar].power;
+        }
+        toast('The Stock Market Simulation is now Live!', 'success');
+      });
+
+      socket.on('game:update', ({ turn, stocks, cash, portfolio, netWorth, leaderboard, currentEvent, powerUsed }) => {
+        document.getElementById('turn-display').textContent = `Turn ${turn}`;
+        
+        const cashDisplayEl = document.getElementById('cash-display');
+        cashDisplayEl.textContent = formatCurrency(cash);
+        if (cash < 0) {
+          cashDisplayEl.style.color = 'var(--red)';
+          cashDisplayEl.textContent += " (MARGIN DEBT)";
+        } else {
+          cashDisplayEl.style.color = 'var(--text)';
+        }
+
+        document.getElementById('networth-display').textContent = formatCurrency(netWorth);
+        
+        const tickerPanel = document.getElementById('news-feed-ticker');
+        const tickerType  = document.getElementById('news-feed-type');
+        const tickerText  = document.getElementById('news-feed-text');
+        
+        tickerPanel.className = `news-panel ${currentEvent.type || 'neutral'}`;
+        tickerType.textContent = currentEvent.type === 'neutral' ? 'REPORT' : currentEvent.type;
+        tickerText.textContent = currentEvent.text;
+
+        if (powerUsed) {
+          const pBtn = document.getElementById('power-trigger-btn');
+          pBtn.disabled = true;
+          pBtn.textContent = "POWER DEPLETED";
+        }
+
+        renderMarketPrices(stocks);
+        renderPortfolioList(portfolio, stocks);
+        renderLeaderboard(leaderboard);
+      });
+
+      socket.on('power:success', ({ message }) => {
+        toast(message, 'success');
+      });
+
+      socket.on('trade:success', ({ action, ticker, shares, price }) => {
+        toast(`Order executed: ${action} ${shares} shares of ${ticker} at ${formatCurrency(price)}.`, 'success');
+      });
+
+      socket.on('trade:error', ({ message }) => { toast(message, 'err'); });
+    }
+
+    function setupHostScreen() {
+      isHost = true;
+      connectSocket();
+      showScreen('host');
+    }
+
+    function hostJoin() {
+      const name = document.getElementById('inp-host-name').value.trim();
+      if (!name) {
+        document.getElementById('host-error').textContent = 'Please configure an identity name.';
+        return;
+      }
+      socket.emit('lobby:join', { name, roomCode });
+      showScreen('lobby');
+    }
+
+    function joinGame() {
+      const code = document.getElementById('inp-code').value.trim();
+      const name = document.getElementById('inp-name').value.trim();
+      if (code.length !== 6 || !name) {
+        document.getElementById('join-error').textContent = 'Valid 6-digit room code and name required.';
+        return;
+      }
+      roomCode = code;
+      connectSocket();
+      socket.emit('lobby:join', { name, roomCode });
+    }
+
+    function pickChar(characterName) {
+      myChar = characterName;
+      socket.emit('lobby:pick_character', { character: characterName });
+      const charEmojis = { Wolf: '🐺', Bear: '🐻', Bull: '🐂', Sheep: '🐑' };
+      document.getElementById('user-profile-summary').innerHTML = `Role Class: <strong>${characterName} ${charEmojis[characterName] || ''}</strong>`;
+      renderChars();
+    }
+
+    function readyUp() {
+      socket.emit('lobby:ready');
+    }
+
+    function triggerActivePower() {
+      const targetTicker = document.getElementById('trade-ticker').value;
+      if (!targetTicker && (myChar === 'Wolf' || myChar === 'Bull')) {
+        toast("Please select a target security from the dropdown menu first.", "err");
+        return;
+      }
+      socket.emit('power:activate', { targetTicker });
+    }
+
+    function renderLobby(players) {
+      const relevantPlayer = players.find(p => p.id === socket.id);
+      if (relevantPlayer) {
+        myChar = relevantPlayer.character;
+      }
+
+      renderChars();
+      renderPlayers(players);
+      document.getElementById('ready-btn').disabled = !myChar;
+    }
+
+    function renderChars() {
+      const chars = [
+        { name: 'Wolf',  emoji: '🐺', desc: 'Aggressive trader. High risk, high reward.',       bonus: '+15% gain on upward moves' },
+        { name: 'Bear',  emoji: '🐻', desc: 'Cautious investor. Prefers safe, steady returns.', bonus: 'Lose 50% less on downward moves' },
+        { name: 'Bull',  emoji: '🐂', desc: 'Optimistic player. Bets on market surges.',        bonus: '+10% extra dividends each turn' },
+        { name: 'Sheep', emoji: '🐑', desc: 'Beginner-friendly. Protected from worst crashes.', bonus: 'Loss capped at 5% per turn' },
+      ];
+
+      document.getElementById('chars-grid').innerHTML = chars.map(c => {
+        const isSelected = c.name === myChar;
+        const meta = CHAR_META[c.name];
+        return `<div class="char-card${isSelected ? ' selected' : ''}"
+                     style="--char-color:${meta.color};--char-bg:${meta.bg}"
+                     onclick="pickChar('${c.name}')">
+          <div class="char-emoji">${c.emoji}</div>
+          <div class="char-name">${c.name}</div>
+          <div class="char-desc">${c.desc}</div>
+          <div class="char-bonus">${c.bonus}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderPlayers(playersList) {
+      const charEmojis = { Wolf: '🐺', Bear: '🐻', Bull: '🐂', Sheep: '🐑' };
+      const gamingPlayers = playersList.filter(p => p.character !== null);
+
+      document.getElementById('players-list').innerHTML = gamingPlayers.map(p => {
+        const emojiValue = charEmojis[p.character] || '👤';
+        const stateBadge = p.ready ? '<span class="ready-badge yes">READY</span>' : '<span class="ready-badge no">THINKING</span>';
+        return `<div class="player-row">
+          <div class="player-emoji">${emojiValue}</div>
+          <div class="player-name">${p.name}</div>
+          <div class="player-char">${p.character}</div>
+          <div>${stateBadge}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderMarketPrices(stocks) {
+      const listingsBody = document.getElementById('market-listings-body');
+      const dropdown     = document.getElementById('trade-ticker');
+      const currentSelection = dropdown.value;
+
+      if (!stocks || stocks.length === 0) return;
+
+      dropdown.innerHTML = '<option value="">-- Select Asset --</option>' + stocks.map(s => 
+        `<option value="${s.ticker}">${s.ticker} (${formatCurrency(s.currentPrice)})</option>`
+      ).join('');
+      dropdown.value = currentSelection;
+
+      listingsBody.innerHTML = stocks.map(s => {
+        let dirClass = 'p-neu', arrowSymbol = '•', changeText = '0.00%';
+        if (s.movementDirection === 'up') {
+          dirClass = 'p-up'; arrowSymbol = '▲';
+          changeText = `+${(((s.currentPrice - s.previousPrice) / s.previousPrice) * 100).toFixed(2)}%`;
+        } else if (s.movementDirection === 'down') {
+          dirClass = 'p-dn'; arrowSymbol = '▼';
+          changeText = `-${(((s.previousPrice - s.currentPrice) / s.previousPrice) * 100).toFixed(2)}%`;
+        }
+        return `<tr>
+          <td><span class="ticker">${s.ticker}</span></td>
+          <td><span class="badge ${SECTOR_CLASSES[s.sector] || ''}">${s.sector}</span></td>
+          <td class="r" style="font-family:'Space Mono',monospace; font-weight:700">${formatCurrency(s.currentPrice)}</td>
+          <td class="${dirClass}">${arrowSymbol} ${changeText}</td>
+          <td class="yld">${(s.dividendYield * 100).toFixed(1)}%</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function renderPortfolioList(portfolio, stocks) {
+      const container = document.getElementById('my-portfolio-list');
+      if (!portfolio || portfolio.length === 0) {
+        container.innerHTML = '<div style="font-size:12px; color:var(--text3); padding:10px 0; text-align:center">No assets held.</div>';
+        return;
+      }
+      container.innerHTML = '<div class="section-title" style="margin-top:10px; margin-bottom:4px">Your Inventory</div>' + 
+      portfolio.map(h => {
+        const currentStock = stocks ? stocks.find(s => s.ticker === h.ticker) : null;
+        const pricingValue = currentStock ? currentStock.currentPrice * h.shares : 0;
+        
+        let positionTypeLabel = h.shares > 0 ? "units" : "shorted units";
+        let displayColorStyle = h.shares > 0 ? "inherit" : "var(--red)";
+
+        return `<div class="portfolio-row" style="color:${displayColorStyle}">
+          <div><div class="port-ticker">${h.ticker}</div><div class="port-shares">${Math.abs(h.shares)} ${positionTypeLabel}</div></div>
+          <div class="port-val">${formatCurrency(pricingValue)}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderLeaderboard(leaderboardArr) {
+      const charEmojis = { Wolf: '🐺', Bear: '🐻', Bull: '🐂', Sheep: '🐑' };
+      const listOutput = leaderboardArr.filter(p => p.name !== '_HOST_DUMMY_INIT_');
+      document.getElementById('leaderboard-body').innerHTML = listOutput.map((p, idx) => `
+        <div class="lb-row">
+          <div class="lb-name">
+            <span style="color:var(--text3); font-family:'Space Mono'; width:16px; display:inline-block">${idx + 1}.</span>
+            <span>${charEmojis[p.character] || '👤'}</span>
+            <strong>${p.name}</strong>
+          </div>
+          <div class="lb-val">${formatCurrency(p.netWorth)}</div>
+        </div>`).join('');
+    }
+
+    function buy() {
+      const ticker = document.getElementById('trade-ticker').value;
+      const shares = parseInt(document.getElementById('trade-shares').value);
+      if (ticker && shares > 0) socket.emit('trade:buy', { ticker, shares });
+    }
+
+    function sell() {
+      const ticker = document.getElementById('trade-ticker').value;
+      const shares = parseInt(document.getElementById('trade-shares').value);
+      if (ticker && shares > 0) socket.emit('trade:sell', { ticker, shares });
+    }
+
+    function advanceTurn() {
+      fetch(`${BACKEND_URL}/api/market/advance`, { method: 'POST' }).catch(() => toast('Turn advancement failed.', 'err'));
+    }
+
+    function showScreen(name) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(`screen-${name}`).classList.add('active');
+    }
+
+    function formatCurrency(val) { return '$' + Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+    let toastTimer = null;
+    function toast(msg, type = '') {
+      const el = document.getElementById('toast');
+      el.textContent = msg; el.className = `show ${type}`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { el.className = ''; }, 2800);
+    }
+  </script>
+</body>
+</html>
