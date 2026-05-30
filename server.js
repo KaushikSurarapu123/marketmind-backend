@@ -31,6 +31,7 @@ console.log(`└─────────────────────�
 const STARTING_CASH = 10000;
 const INITIAL_SEED  = 'SEED_TEST_2026';
 const MARGIN_INTEREST_RATE = 0.05; 
+const MAX_TURNS = 10; // Game finishes after 10 full turns
 
 const CHARACTERS = {
   Wolf:  { name: 'Wolf',  emoji: '🐺', description: 'Aggressive trader. High risk, high reward.',       bonus: 'Gains +15% on any stock that moves up this turn.', style: 'aggressive', color: '#7C3AED' },
@@ -150,6 +151,21 @@ function calcNetWorth(player) {
   return player.cash + assetValue;
 }
 
+// ─── Complete Leaderboard Array Utility ──────────────────────────────────────
+
+function getFullLeaderboard() {
+  const charEmojis = { Wolf: '🐺', Bear: '🐻', Bull: '🐂', Sheep: '🐑' };
+  return Array.from(players.values())
+    .filter(p => p.name !== '_HOST_DUMMY_INIT_')
+    .map(p => ({
+      name:      p.name,
+      character: p.character,
+      emoji:     charEmojis[p.character] || '👤',
+      netWorth:  calcNetWorth(p),
+    }))
+    .sort((a, b) => b.netWorth - a.netWorth);
+}
+
 // ─── Broadcast ────────────────────────────────────────────────────────────────
 
 function broadcastLobby() {
@@ -160,16 +176,13 @@ function broadcastLobby() {
 }
 
 function broadcastGameState() {
-  const leaderboard = Array.from(players.values()).map(p => ({
-    name:      p.name,
-    character: p.character,
-    netWorth:  calcNetWorth(p),
-  })).sort((a, b) => b.netWorth - a.netWorth);
+  const leaderboard = getFullLeaderboard();
 
   for (const [socketId, player] of players.entries()) {
     const pWorth = calcNetWorth(player);
     io.to(socketId).emit('game:update', {
       turn:        currentTurn,
+      maxTurns:    MAX_TURNS,
       stocks:      internalStocks,
       cash:        player.cash,
       portfolio:   player.portfolio,
@@ -185,6 +198,19 @@ function broadcastGameState() {
 
 app.post('/api/market/advance', (req, res) => {
   if (!gameStarted) return res.status(400).json({ error: 'Game not started.' });
+
+  currentTurn++;
+
+  // CHECK WIN CONDITIONS: Terminate when max limits hit threshold
+  if (currentTurn > MAX_TURNS) {
+    gameStarted = false;
+    const finalLeaderboard = getFullLeaderboard();
+    io.emit('game:over', {
+      winner: finalLeaderboard[0],
+      leaderboard: finalLeaderboard
+    });
+    return res.json({ success: true, gameOver: true });
+  }
 
   const randomIdx = Math.floor(Math.random() * MARKET_EVENTS.length);
   currentEvent = MARKET_EVENTS[randomIdx];
@@ -240,9 +266,8 @@ app.post('/api/market/advance', (req, res) => {
     }
   }
 
-  currentTurn++;
   broadcastGameState();
-  res.json({ success: true, turn: currentTurn });
+  res.json({ success: true, turn: currentTurn, gameOver: false });
 });
 
 // ─── Sockets ──────────────────────────────────────────────────────────────────
