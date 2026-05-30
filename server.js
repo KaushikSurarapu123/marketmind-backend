@@ -7,66 +7,66 @@ const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server, { cors: { origin: '*' } });
 
-// CONFIG: Reads the dynamic cloud port layer assigned by Render
 const PORT   = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname));
 
-// ─── Room Code Generation ─────────────────────────────────────────────────────
-
-function generateRoomCode() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
-
-const ROOM_CODE = generateRoomCode();
-console.log(`\n┌─────────────────────────────┐`);
-console.log(`│   ROOM CODE:  ${ROOM_CODE}        │`);
-console.log(`│   Share this with players   │`);
-console.log(`└─────────────────────────────┘\n`);
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const STARTING_CASH = 10000;
-const INITIAL_SEED  = 'SEED_TEST_2026';
-const MARGIN_INTEREST_RATE = 0.05; 
+// ─── GAME ARCHITECTURE CONFIGURATION ──────────────────────────────────────────
+const STARTING_CASH         = 10000;
+const INITIAL_SEED           = 'SEED_TEST_2026';
+const MARGIN_INTEREST_RATE   = 0.04; // Charged on negative balances
+const TOTAL_GAME_TURNS       = 15;   // Hard limit for game sessions
 
 const CHARACTERS = {
-  Wolf:  { name: 'Wolf',  emoji: '🐺', description: 'Aggressive trader. High risk, high reward.',       bonus: 'Gains +15% on any stock that moves up this turn.', style: 'aggressive', color: '#7C3AED' },
-  Bear:  { name: 'Bear',  emoji: '🐻', description: 'Cautious investor. Prefers safe, steady returns.', bonus: 'Loses 50% less on any stock that moves down.',       style: 'cautious',   color: '#B45309' },
-  Bull:  { name: 'Bull',  emoji: '🐂', description: 'Optimistic player. Bets on market surges.',        bonus: 'Earns +10% extra dividends each turn.',              style: 'optimistic', color: '#047857' },
-  Sheep: { name: 'Sheep', emoji: '🐑', description: 'Beginner-friendly. Protected from worst crashes.', bonus: 'Max loss per turn capped at 5% of holding value.',   style: 'beginner',   color: '#0369A1' },
+  Wolf:  { name: 'Wolf',  style: 'aggressive', description: 'Aggressive short seller. No margin interest penalty.' },
+  Bear:  { name: 'Bear',  style: 'cautious',   description: 'Strategic operator. Can sabotage sector values.' },
+  Bull:  { name: 'Bull',  style: 'optimistic', description: 'Optimistic driver. Gains enhanced asset leverage limits.' },
+  Sheep: { name: 'Sheep', style: 'beginner',   description: 'Defensive positioner. Capped down-turn structural exposure.' },
 };
 
 const MARKET_EVENTS = [
-  { text: "AI Breakthrough announced! Technology stocks surge.", sector: "Technology", multiplier: 1.30, type: "boom" },
-  { text: "Strict global environmental audits hit fossil fuels. Energy collapses.", sector: "Energy", multiplier: 0.65, type: "bust" },
-  { text: "Power grid failure! Utilities plummet, but tech volatility doubles.", sector: "Utilities", multiplier: 0.70, type: "bust" },
+  { text: "AI Breakthrough announced! Technology stocks surge.", sector: "Technology", multiplier: 1.35, type: "boom" },
+  { text: "Strict global environmental audits hit fossil fuels. Energy collapses.", sector: "Energy", multiplier: 0.60, type: "bust" },
+  { text: "Power grid failure! Utilities plummet across regional nodes.", sector: "Utilities", multiplier: 0.65, type: "bust" },
   { text: "Healthcare deregulation bill passes. Healthcare sector breaks out.", sector: "Healthcare", multiplier: 1.25, type: "boom" },
-  { text: "Black Swan Event! Hyperinflation fears grip global markets.", sector: "All", multiplier: 0.80, type: "crash" },
-  { text: "Standard Turn. Normal corporate earnings reporting across indices.", sector: "None", multiplier: 1.00, type: "neutral" }
+  { text: "Black Swan Event! Liquidity crisis grips global clearing networks.", sector: "All", multiplier: 0.75, type: "bust" },
+  { text: "Standard Turn. Corporate earnings match consensus data expectations.", sector: "None", multiplier: 1.00, type: "neutral" }
+];
+
+const PRIVATE_LEAKS_POOL = [
+  "Rumor: Regulators looking closely at TECH_GEN corporate tax structure...",
+  "Insider Source: HC_STABLE about to clear phase-3 trial authorization.",
+  "Whispers: NRG_SHOCK preparing an unexpected cash dividend bump.",
+  "Data Leak: UTIL_SAFE infrastructure metrics showing severe strain.",
+  "Macro Signal: Institutional desks are quietly accumulating Tech assets.",
+  "Analyst Note: Energy sector supply channels look completely bottlenecked."
 ];
 
 const MOCK_CSV_DATA = [
-  { ticker: 'TECH_GEN',  sector: 'Technology', base_price: 150.00, volatility: 0.10, dividend_yield: 0.015 },
-  { ticker: 'HC_STABLE', sector: 'Healthcare',  base_price:  85.50, volatility: 0.03, dividend_yield: 0.042 },
-  { ticker: 'NRG_SHOCK', sector: 'Energy',      base_price:  62.25, volatility: 0.06, dividend_yield: 0.035 },
-  { ticker: 'UTIL_SAFE', sector: 'Utilities',   base_price: 110.00, volatility: 0.02, dividend_yield: 0.051 },
+  { ticker: 'TECH_GEN',  sector: 'Technology', base_price: 150.00, volatility: 0.12, dividend_yield: 0.015 },
+  { ticker: 'HC_STABLE', sector: 'Healthcare',  base_price:  85.50, volatility: 0.04, dividend_yield: 0.045 },
+  { ticker: 'NRG_SHOCK', sector: 'Energy',      base_price:  62.25, volatility: 0.08, dividend_yield: 0.035 },
+  { ticker: 'UTIL_SAFE', sector: 'Utilities',   base_price: 110.00, volatility: 0.02, dividend_yield: 0.055 },
 ];
 
-// ─── State ────────────────────────────────────────────────────────────────────
+// ─── SERVER STATE MANAGEMENT ──────────────────────────────────────────────────
+let currentTurn     = 1;
+let gameStarted     = false;
+let gameOver        = false;
+let internalStocks  = [];
+let rng             = null;
+let currentEvent    = { text: "Market open. Initial listings registered.", sector: "None", multiplier: 1.00, type: "neutral" };
+let freezeTicker    = null;
+let hostSocketId    = null;
 
-let currentTurn    = 1;
-let gameStarted    = false;
-let internalStocks = [];
-let rng            = null;
-let currentEvent   = { text: "Market open. Initial listings registered.", sector: "None", multiplier: 1.00, type: "neutral" };
-let freezeTicker   = null;
+const players       = new Map();
+const ROOM_CODE     = Math.floor(100000 + Math.random() * 900000).toString();
 
-const players      = new Map();
-
-// ─── Seeded RNG ───────────────────────────────────────────────────────────────
+console.log(`\n┌──────────────────────────────────────────────┐`);
+console.log(`│   MARKETMIND ROOM ENGINE CODE:  ${ROOM_CODE}       │`);
+console.log(`└──────────────────────────────────────────────┘\n`);
 
 function seededRandom(seedString) {
   let h = 1779033703 ^ seedString.length;
@@ -81,8 +81,6 @@ function seededRandom(seedString) {
   };
 }
 
-// ─── Market Init ──────────────────────────────────────────────────────────────
-
 function loadInitialMarketData() {
   internalStocks = MOCK_CSV_DATA.map(s => ({
     ticker:            s.ticker,
@@ -93,13 +91,30 @@ function loadInitialMarketData() {
     dividendYield:     s.dividend_yield,
     movementDirection: 'neutral',
   }));
-  rng         = seededRandom(INITIAL_SEED);
-  currentTurn = 1;
+  rng          = seededRandom(INITIAL_SEED);
+  currentTurn  = 1;
   freezeTicker = null;
+  gameOver     = false;
   currentEvent = { text: "Market open. Initial listings registered.", sector: "None", multiplier: 1.00, type: "neutral" };
 }
 
-// ─── Character Bonuses ────────────────────────────────────────────────────────
+function calcNetWorth(player) {
+  const assetValue = player.portfolio.reduce((sum, h) => {
+    const stock = internalStocks.find(s => s.ticker === h.ticker);
+    if (!stock) return sum;
+    return sum + (stock.currentPrice * h.shares);
+  }, 0);
+  return player.cash + assetValue;
+}
+
+function generateDeterministicLeaks(turnNum, count) {
+  let list = [];
+  for(let i=0; i<count; i++) {
+    let index = Math.abs(Math.sin(turnNum + i)) * PRIVATE_LEAKS_POOL.length;
+    list.push(PRIVATE_LEAKS_POOL[Math.floor(index) % PRIVATE_LEAKS_POOL.length]);
+  }
+  return list;
+}
 
 function applyCharacterBonus(player, updatedStocks) {
   let { cash, portfolio, character } = player;
@@ -112,79 +127,90 @@ function applyCharacterBonus(player, updatedStocks) {
 
     if (holding.shares > 0) {
       if (style === 'aggressive' && stock.movementDirection === 'up') {
-        cash += holding.shares * priceDiff * 0.15;
+        cash += holding.shares * priceDiff * 0.15; // Wolf extra capture
       }
       if (style === 'cautious' && stock.movementDirection === 'down') {
-        cash += holding.shares * Math.abs(priceDiff) * 0.50;
+        cash += holding.shares * Math.abs(priceDiff) * 0.50; // Bear defensive hedge
       }
       if (style === 'beginner' && stock.movementDirection === 'down') {
         const maxLoss    = holding.shares * stock.previousPrice * 0.05;
         const actualLoss = holding.shares * Math.abs(priceDiff);
-        if (actualLoss > maxLoss) cash += (actualLoss - maxLoss);
+        if (actualLoss > maxLoss) cash += (actualLoss - maxLoss); // Sheep floor protection
       }
     }
     return holding;
   });
 
+  // Bull structural compounding dividend yield bonus
   if (style === 'optimistic') {
     portfolio.forEach(holding => {
       const stock = updatedStocks.find(s => s.ticker === holding.ticker);
-      if (stock && holding.shares > 0) cash += holding.shares * stock.currentPrice * stock.dividendYield * 0.10;
+      if (stock && holding.shares > 0) cash += holding.shares * stock.currentPrice * stock.dividendYield * 0.20;
     });
   }
 
   return { cash, portfolio };
 }
 
-// ─── Net Worth ────────────────────────────────────────────────────────────────
-
-function calcNetWorth(player) {
-  if (!internalStocks || internalStocks.length === 0) return player.cash;
-  
-  const assetValue = player.portfolio.reduce((sum, h) => {
-    const stock = internalStocks.find(s => s.ticker === h.ticker);
-    if (!stock) return sum;
-    return sum + (stock.currentPrice * h.shares);
-  }, 0);
-
-  return player.cash + assetValue;
-}
-
-// ─── Broadcast ────────────────────────────────────────────────────────────────
-
 function broadcastLobby() {
   io.emit('lobby:update', {
-    players: Array.from(players.values()).map(p => ({ id: p.id, name: p.name, character: p.character, ready: p.ready })),
+    players: Array.from(players.values()).map(p => ({ id: p.id, name: p.name, character: p.character, ready: p.ready, isHost: p.id === hostSocketId })),
     roomCode: ROOM_CODE
   });
 }
 
 function broadcastGameState() {
-  const leaderboard = Array.from(players.values()).map(p => ({
-    name:      p.name,
-    character: p.character,
-    netWorth:  calcNetWorth(p),
-  })).sort((a, b) => b.netWorth - a.netWorth);
+  const leaderboard = Array.from(players.values())
+    .filter(p => p.id !== hostSocketId || p.character !== null)
+    .map(p => ({
+      name:      p.name,
+      character: p.character,
+      netWorth:  calcNetWorth(p),
+    })).sort((a, b) => b.netWorth - a.netWorth);
+
+  const turnLeaks = generateDeterministicLeaks(currentTurn, players.size + 2);
+  let leakIdx = 0;
 
   for (const [socketId, player] of players.entries()) {
     const pWorth = calcNetWorth(player);
+    const assignedLeak = turnLeaks[leakIdx % turnLeaks.length];
+    leakIdx++;
+
     io.to(socketId).emit('game:update', {
-      turn:        currentTurn,
-      stocks:      internalStocks,
-      cash:        player.cash,
-      portfolio:   player.portfolio,
-      netWorth:    pWorth,
-      leaderboard: leaderboard,
+      turn:         currentTurn,
+      maxTurns:     TOTAL_GAME_TURNS,
+      stocks:       internalStocks,
+      cash:         player.cash,
+      portfolio:    player.portfolio,
+      netWorth:     pWorth,
+      leaderboard:  leaderboard,
       currentEvent: currentEvent,
-      powerUsed:    player.powerUsed || false
+      powerUsed:    player.powerUsed || false,
+      privateLeak:  assignedLeak,
+      isHost:       socketId === hostSocketId,
+      gameOver:     gameOver
     });
   }
 }
 
-// ─── Endpoints ────────────────────────────────────────────────────────────────
+function executeFinalLiquidation() {
+  gameOver = true;
+  for (const [id, player] of players.entries()) {
+    let finalLiquidationValue = calcNetWorth(player);
+    player.cash = finalLiquidationValue;
+    player.portfolio = [];
+  }
+}
 
+// ─── ADMIN CONTROL ROUTE ──────────────────────────────────────────────────────
 app.post('/api/market/advance', (req, res) => {
-  if (!gameStarted) return res.status(400).json({ error: 'Game not started.' });
+  if (!gameStarted || gameOver) return res.status(400).json({ error: 'Action unavailable.' });
+
+  if (currentTurn >= TOTAL_GAME_TURNS) {
+    executeFinalLiquidation();
+    broadcastGameState();
+    return res.json({ success: true, gameOver: true });
+  }
 
   const randomIdx = Math.floor(Math.random() * MARKET_EVENTS.length);
   currentEvent = MARKET_EVENTS[randomIdx];
@@ -202,11 +228,9 @@ app.post('/api/market/advance', (req, res) => {
     }
 
     let changePercent = (rng() - 0.5) * 2 * stock.volatility;
-    
     if (currentEvent.sector === stock.sector || currentEvent.sector === "All") {
       changePercent += (currentEvent.multiplier - 1.0);
     }
-
     if (activeSqueezeTicker === stock.ticker) {
       changePercent += 0.25; 
     }
@@ -224,7 +248,8 @@ app.post('/api/market/advance', (req, res) => {
   freezeTicker = null;
 
   for (const [id, player] of players.entries()) {
-    if (player.cash < 0) {
+    // Wolf passive feature: immune to negative account balance debt interest penalties
+    if (player.cash < 0 && player.character !== 'Wolf') {
       player.cash += player.cash * MARGIN_INTEREST_RATE;
     }
 
@@ -232,11 +257,11 @@ app.post('/api/market/advance', (req, res) => {
     player.cash      = result.cash;
     player.portfolio = result.portfolio;
 
-    const totalWorth = calcNetWorth(player);
-    if (totalWorth < 1000 && player.cash < 0) {
+    // Automatic Liquidation Threshold Protection
+    if (calcNetWorth(player) < 800 && player.cash < 0) {
       player.portfolio = [];
-      player.cash = Math.max(0, totalWorth); 
-      io.to(player.id).emit('trade:error', { message: 'CRITICAL MARGIN CALL: Portfolio automatically liquidated.' });
+      player.cash = Math.max(0, calcNetWorth(player)); 
+      io.to(player.id).emit('trade:error', { message: 'MARGIN DISASTER: Your account risk breached security limits and was liquidated.' });
     }
   }
 
@@ -245,11 +270,8 @@ app.post('/api/market/advance', (req, res) => {
   res.json({ success: true, turn: currentTurn });
 });
 
-// ─── Sockets ──────────────────────────────────────────────────────────────────
-
+// ─── SOCKET CORE LISTENER LAYER ───────────────────────────────────────────────
 io.on('connection', (socket) => {
-  console.log(`[SOCKET] Connected: ${socket.id}`);
-
   socket.emit('room:code', { roomCode: ROOM_CODE });
 
   socket.on('lobby:join', ({ name, roomCode }) => {
@@ -258,14 +280,13 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (name === '_HOST_DUMMY_INIT_') {
-      broadcastLobby();
-      return;
+    if (!hostSocketId && (players.size === 0 || name.includes('_HOST_'))) {
+      hostSocketId = socket.id;
     }
 
     players.set(socket.id, {
       id:        socket.id,
-      name:      name.trim(),
+      name:      name.replace('_HOST_', '').trim(),
       character: null,
       ready:     false,
       cash:      STARTING_CASH,
@@ -273,14 +294,12 @@ io.on('connection', (socket) => {
       powerUsed: false
     });
     
-    console.log(`[LOBBY] ${name} joined the room`);
     broadcastLobby();
   });
 
   socket.on('lobby:pick_character', ({ character }) => {
     const player = players.get(socket.id);
     if (!player || !CHARACTERS[character]) return;
-    
     player.character = character;
     broadcastLobby();
   });
@@ -296,7 +315,7 @@ io.on('connection', (socket) => {
     const activeGamingPlayers = allPlayers.filter(p => p.character !== null);
     const allReady = activeGamingPlayers.every(p => p.ready);
     
-    if (allReady && activeGamingPlayers.length >= 2 && !gameStarted) {
+    if (allReady && activeGamingPlayers.length >= 1 && !gameStarted) {
       gameStarted = true;
       loadInitialMarketData();
       io.emit('game:started');
@@ -304,57 +323,52 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('power:activate', ({ targetTicker }) => {
+  socket.on('power:activate', ({ targetTicker, targetSector }) => {
     const player = players.get(socket.id);
-    if (!player || !gameStarted || player.powerUsed) return;
-
-    const stock = internalStocks.find(s => s.ticker === targetTicker);
-    if (!stock && player.character !== 'Bear') return;
+    if (!player || !gameStarted || player.powerUsed || gameOver) return;
 
     if (player.character === 'Wolf') {
+      if (!targetTicker) return;
       player.powerUsed = true;
       player.squeezeActiveTurn = currentTurn + 1;
       player.squeezeTicker = targetTicker;
-      socket.emit('power:success', { message: `Short Squeeze ordered on ${targetTicker} for next turn!` });
+      socket.emit('power:success', { message: `Squeeze configuration successful. Engineering buy walls on ${targetTicker}.` });
     } 
     else if (player.character === 'Bear') {
-      if (player.cash < 1000) {
-        socket.emit('trade:error', { message: 'Insufficient cash fee ($1,000) for insider leak.' });
-        return;
-      }
-      player.cash -= 1000;
+      if (!targetSector) return;
       player.powerUsed = true;
-      const mockRngVal = Math.random();
-      const prediction = mockRngVal > 0.5 ? "BULLISH BREAKOUT SHIFT" : "BEARISH CRASH DEPRECIATION";
-      socket.emit('power:success', { message: `INSIDER LEAK: Macro calculations indicate a ${prediction} phase next turn.` });
+      currentEvent = { text: `Bear Sabotage! Targeted short campaign hitting ${targetSector}.`, sector: targetSector, multiplier: 0.70, type: "bust" };
+      socket.emit('power:success', { message: `Sabotage execution packet injected into ${targetSector} lines.` });
     } 
     else if (player.character === 'Bull') {
+      if (!targetTicker) return;
       player.powerUsed = true;
       freezeTicker = targetTicker;
-      socket.emit('power:success', { message: `Hostile Takeover! Pricing variance frozen for ${targetTicker} until next turn.` });
+      socket.emit('power:success', { message: `Takeover locked. Pricing variance on ${targetTicker} frozen until next loop.` });
     } 
     else if (player.character === 'Sheep') {
-      player.cash += 2500;
+      player.cash += 3000;
       player.powerUsed = true;
-      socket.emit('power:success', { message: 'Safety Net deployed! $2,500 emergency cash credited to balance sheet.' });
+      socket.emit('power:success', { message: 'Emergency safety reserve injection: $3,000 credited.' });
     }
 
     broadcastGameState();
   });
 
   socket.on('trade:buy', ({ ticker, shares }) => {
-    const player  = players.get(socket.id);
-    if (!player || !gameStarted) return;
+    const player = players.get(socket.id);
+    if (!player || !gameStarted || gameOver) return;
     shares = Math.floor(Number(shares));
     if (!shares || shares <= 0) return;
 
-    const stock   = internalStocks.find(s => s.ticker === ticker);
+    const stock = internalStocks.find(s => s.ticker === ticker);
     if (!stock) return;
-    const cost    = stock.currentPrice * shares;
+    const cost = stock.currentPrice * shares;
 
-    const projectedWorth = calcNetWorth(player);
-    if (projectedWorth < 500) {
-      socket.emit('trade:error', { message: 'Margin Limit Exceeded. Action denied by clearing broker.' });
+    // Bull character archetype unlocks 2.5x deep margin access profile
+    const marginThreshold = (player.character === 'Bull') ? -15000 : -5000;
+    if (player.cash - cost < marginThreshold) {
+      socket.emit('trade:error', { message: 'Clearing Failure: Insufficient capital/margin capacity to route order.' });
       return;
     }
 
@@ -367,25 +381,24 @@ io.on('connection', (socket) => {
 
     player.cash -= cost;
     player.portfolio = player.portfolio.filter(h => h.shares !== 0);
-
     broadcastGameState();
-    socket.emit('trade:success', { action: 'buy / close short', ticker, shares, price: stock.currentPrice });
+    socket.emit('trade:success', { action: 'BUY', ticker, shares, price: stock.currentPrice });
   });
 
   socket.on('trade:sell', ({ ticker, shares }) => {
-    const player  = players.get(socket.id);
-    if (!player || !gameStarted) return;
+    const player = players.get(socket.id);
+    if (!player || !gameStarted || gameOver) return;
     shares = Math.floor(Number(shares));
     if (!shares || shares <= 0) return;
 
-    const stock   = internalStocks.find(s => s.ticker === ticker);
+    const stock = internalStocks.find(s => s.ticker === ticker);
     if (!stock) return;
 
     const holding = player.portfolio.find(h => h.ticker === ticker);
     const currentlyOwned = holding ? holding.shares : 0;
 
-    if (currentlyOwned - shares < -500) {
-      socket.emit('trade:error', { message: 'Short limit threshold hit. Maximum allowable short exposure is -500 shares.' });
+    if (currentlyOwned - shares < -600) {
+      socket.emit('trade:error', { message: 'Exchange Rule: Order execution blocks layout. Short cap rule limit is -600 units.' });
       return;
     }
 
@@ -397,16 +410,15 @@ io.on('connection', (socket) => {
 
     player.cash += stock.currentPrice * shares;
     player.portfolio = player.portfolio.filter(h => h.shares !== 0);
-
     broadcastGameState();
-    socket.emit('trade:success', { action: 'sell / open short', ticker, shares, price: stock.currentPrice });
+    socket.emit('trade:success', { action: 'SHORT', ticker, shares, price: stock.currentPrice });
   });
 
   socket.on('disconnect', () => {
     const player = players.get(socket.id);
     if (player) {
       players.delete(socket.id);
-      console.log(`[SOCKET] ${player.name} disconnected`);
+      if (socket.id === hostSocketId) hostSocketId = null;
       broadcastLobby();
       if (gameStarted) broadcastGameState();
     }
@@ -414,5 +426,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`Core application operating on port: ${PORT}`);
 });
