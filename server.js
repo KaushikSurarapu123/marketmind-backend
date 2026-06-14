@@ -6,9 +6,7 @@ const { Server } = require('socket.io');
 const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server, { cors: { origin: '*' } });
-
-// CONFIG: Reads the dynamic cloud port layer assigned by Render
-const PORT   = process.env.PORT || 3000;
+const PORT   = 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -30,7 +28,7 @@ console.log(`└─────────────────────�
 
 const STARTING_CASH = 10000;
 const INITIAL_SEED  = 'SEED_TEST_2026';
-const MARGIN_INTEREST_RATE = 0.05; 
+const MARGIN_INTEREST_RATE = 0.05; // 5% per turn on borrowed funds
 
 const CHARACTERS = {
   Wolf:  { name: 'Wolf',  emoji: '🐺', description: 'Aggressive trader. High risk, high reward.',       bonus: 'Gains +15% on any stock that moves up this turn.', style: 'aggressive', color: '#7C3AED' },
@@ -250,6 +248,7 @@ app.post('/api/market/advance', (req, res) => {
 io.on('connection', (socket) => {
   console.log(`[SOCKET] Connected: ${socket.id}`);
 
+  // Instantly send room code on initial handshake connection back to clients
   socket.emit('room:code', { roomCode: ROOM_CODE });
 
   socket.on('lobby:join', ({ name, roomCode }) => {
@@ -285,7 +284,7 @@ io.on('connection', (socket) => {
     broadcastLobby();
   });
 
-  socket.on('lobby:ready', () => {
+ socket.on('lobby:ready', () => {
     const player = players.get(socket.id);
     if (!player || !player.character) return;
     
@@ -293,9 +292,14 @@ io.on('connection', (socket) => {
     broadcastLobby();
 
     const allPlayers = Array.from(players.values());
+    
+    // Only look at actual players who have selected a character class
     const activeGamingPlayers = allPlayers.filter(p => p.character !== null);
+    
+    // Check if ALL players who picked a class are ready
     const allReady = activeGamingPlayers.every(p => p.ready);
     
+    // Start game if everyone who picked a class is ready, and we have at least 2 players
     if (allReady && activeGamingPlayers.length >= 2 && !gameStarted) {
       gameStarted = true;
       loadInitialMarketData();
@@ -414,5 +418,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`Server listening on http://localhost:${PORT}`);
 });
