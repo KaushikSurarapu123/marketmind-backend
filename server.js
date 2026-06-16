@@ -6,7 +6,6 @@ const { Server } = require('socket.io');
 const app    = express();
 const server = http.createServer(app);
 
-// Cross-origin Resource Policy update for production deployment links
 const io = new Server(server, { 
   cors: { 
     origin: '*',
@@ -14,7 +13,7 @@ const io = new Server(server, {
   } 
 });
 
-const PORT   = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -39,10 +38,10 @@ const INITIAL_SEED  = 'SEED_TEST_2026';
 const MARGIN_INTEREST_RATE = 0.05; 
 
 const CHARACTERS = {
-  Wolf:  { name: 'Wolf',  emoji: '🐺', description: 'Aggressive trader. High risk, high reward.',       bonus: 'Gains +15% on any stock that moves up this turn.', style: 'aggressive', color: '#7C3AED' },
-  Bear:  { name: 'Bear',  emoji: '🐻', description: 'Cautious investor. Prefers safe, steady returns.', bonus: 'Loses 50% less on any stock that moves down.',       style: 'cautious',   color: '#B45309' },
-  Bull:  { name: 'Bull',  emoji: '🐂', description: 'Optimistic player. Bets on market surges.',        bonus: 'Earns +10% extra dividends each turn.',              style: 'optimistic', color: '#047857' },
-  Sheep: { name: 'Sheep', emoji: '🐑', description: 'Beginner-friendly. Protected from worst crashes.', bonus: 'Max loss per turn capped at 5% of holding value.',   style: 'beginner',   color: '#0369A1' },
+  Wolf:  { name: 'Wolf',  emoji: '🐺', description: 'Aggressive trader.', bonus: 'Gains +15% on any stock that moves up.', style: 'aggressive' },
+  Bear:  { name: 'Bear',  emoji: '🐻', description: 'Cautious investor.', bonus: 'Loses 50% less on any stock that moves down.', style: 'cautious' },
+  Bull:  { name: 'Bull',  emoji: '🐂', description: 'Optimistic player.', bonus: 'Earns +10% extra dividends each turn.', style: 'optimistic' },
+  Sheep: { name: 'Sheep', emoji: '🐑', description: 'Beginner-friendly.', bonus: 'Max loss per turn capped at 5%.', style: 'beginner' },
 };
 
 const MARKET_EVENTS = [
@@ -70,7 +69,7 @@ let rng            = null;
 let currentEvent   = { text: "Market open. Initial listings registered.", sector: "None", multiplier: 1.00, type: "neutral" };
 let freezeTicker   = null;
 
-const players      = new Map();
+const players = new Map();
 
 // ─── Seeded RNG ───────────────────────────────────────────────────────────────
 
@@ -87,8 +86,6 @@ function seededRandom(seedString) {
   };
 }
 
-// ─── Market Init ──────────────────────────────────────────────────────────────
-
 function loadInitialMarketData() {
   internalStocks = MOCK_CSV_DATA.map(s => ({
     ticker:            s.ticker,
@@ -104,8 +101,6 @@ function loadInitialMarketData() {
   freezeTicker = null;
   currentEvent = { text: "Market open. Initial listings registered.", sector: "None", multiplier: 1.00, type: "neutral" };
 }
-
-// ─── Character Bonuses ────────────────────────────────────────────────────────
 
 function applyCharacterBonus(player, updatedStocks) {
   let { cash, portfolio, character } = player;
@@ -142,8 +137,6 @@ function applyCharacterBonus(player, updatedStocks) {
   return { cash, portfolio };
 }
 
-// ─── Net Worth ────────────────────────────────────────────────────────────────
-
 function calcNetWorth(player) {
   if (!internalStocks || internalStocks.length === 0) return player.cash;
   
@@ -156,11 +149,9 @@ function calcNetWorth(player) {
   return player.cash + assetValue;
 }
 
-// ─── Broadcast ────────────────────────────────────────────────────────────────
-
 function broadcastLobby() {
-  io.emit('lobby:update', {
-    players: Array.from(players.values()).map(p => ({ id: p.id, name: p.name, character: p.character, ready: p.ready })),
+  io.to(ROOM_CODE).emit('lobby:update', {
+    players: Array.from(players.values()).map(p => ({ playerId: p.playerId, name: p.name, character: p.character, ready: p.ready })),
     roomCode: ROOM_CODE
   });
 }
@@ -172,9 +163,9 @@ function broadcastGameState() {
     netWorth:  calcNetWorth(p),
   })).sort((a, b) => b.netWorth - a.netWorth);
 
-  for (const [socketId, player] of players.entries()) {
+  for (const [playerId, player] of players.entries()) {
     const pWorth = calcNetWorth(player);
-    io.to(socketId).emit('game:update', {
+    io.to(player.id).emit('game:update', {
       turn:        currentTurn,
       stocks:      internalStocks,
       cash:        player.cash,
@@ -187,7 +178,7 @@ function broadcastGameState() {
   }
 }
 
-// ─── Endpoints ────────────────────────────────────────────────────────────────
+// ─── Turn Advancement ─────────────────────────────────────────────────────────
 
 app.post('/api/market/advance', (req, res) => {
   if (!gameStarted) return res.status(400).json({ error: 'Game not started.' });
@@ -208,11 +199,9 @@ app.post('/api/market/advance', (req, res) => {
     }
 
     let changePercent = (rng() - 0.5) * 2 * stock.volatility;
-    
     if (currentEvent.sector === stock.sector || currentEvent.sector === "All") {
       changePercent += (currentEvent.multiplier - 1.0);
     }
-
     if (activeSqueezeTicker === stock.ticker) {
       changePercent += 0.25; 
     }
@@ -242,7 +231,7 @@ app.post('/api/market/advance', (req, res) => {
     if (totalWorth < 1000 && player.cash < 0) {
       player.portfolio = [];
       player.cash = Math.max(0, totalWorth); 
-      io.to(player.id).emit('trade:error', { message: 'CRITICAL MARGIN CALL: Portfolio automatically liquidated.' });
+      io.to(player.id).emit('trade:error', { message: 'CRITICAL MARGIN CALL: Liquidated.' });
     }
   }
 
@@ -251,27 +240,24 @@ app.post('/api/market/advance', (req, res) => {
   res.json({ success: true, turn: currentTurn });
 });
 
-// ─── Sockets ──────────────────────────────────────────────────────────────────
+// ─── Sockets Handshaking ──────────────────────────────────────────────────────
 
 io.on('connection', (socket) => {
   console.log(`[SOCKET] Connected: ${socket.id}`);
-
-  // Push immediate room feedback
   socket.emit('room:code', { roomCode: ROOM_CODE });
 
-  socket.on('lobby:join', ({ name, roomCode }) => {
+  socket.on('lobby:join', ({ name, roomCode, playerId }) => {
     if (roomCode !== ROOM_CODE) {
       socket.emit('lobby:error', { message: 'Invalid Room Code.' });
       return;
     }
 
-    if (name === '_HOST_DUMMY_INIT_') {
-      broadcastLobby();
-      return;
-    }
+    socket.join(ROOM_CODE);
 
-    players.set(socket.id, {
+    // Save mapping securely via invariant tracking id
+    players.set(playerId, {
       id:        socket.id,
+      playerId:  playerId,
       name:      name.trim(),
       character: null,
       ready:     false,
@@ -280,20 +266,20 @@ io.on('connection', (socket) => {
       powerUsed: false
     });
     
-    console.log(`[LOBBY] ${name} joined the room`);
+    console.log(`[LOBBY] Player ${name} joined dynamically.`);
     broadcastLobby();
   });
 
-  socket.on('lobby:pick_character', ({ character }) => {
-    const player = players.get(socket.id);
+  socket.on('lobby:pick_character', ({ character, playerId }) => {
+    const player = players.get(playerId);
     if (!player || !CHARACTERS[character]) return;
     
     player.character = character;
     broadcastLobby();
   });
 
-  socket.on('lobby:ready', () => {
-    const player = players.get(socket.id);
+  socket.on('lobby:ready', ({ playerId }) => {
+    const player = players.get(playerId);
     if (!player || !player.character) return;
     
     player.ready = !player.ready;
@@ -306,117 +292,99 @@ io.on('connection', (socket) => {
     if (allReady && activeGamingPlayers.length >= 2 && !gameStarted) {
       gameStarted = true;
       loadInitialMarketData();
-      io.emit('game:started');
+      io.to(ROOM_CODE).emit('game:started');
       broadcastGameState();
     }
   });
 
-  socket.on('power:activate', ({ targetTicker }) => {
-    const player = players.get(socket.id);
+  socket.on('power:activate', ({ targetTicker, playerId }) => {
+    const player = players.get(playerId);
     if (!player || !gameStarted || player.powerUsed) return;
-
-    const stock = internalStocks.find(s => s.ticker === targetTicker);
-    if (!stock && player.character !== 'Bear') return;
 
     if (player.character === 'Wolf') {
       player.powerUsed = true;
       player.squeezeActiveTurn = currentTurn + 1;
       player.squeezeTicker = targetTicker;
-      socket.emit('power:success', { message: `Short Squeeze ordered on ${targetTicker} for next turn!` });
+      socket.emit('power:success', { message: `Short Squeeze targeted on ${targetTicker}!` });
     } 
     else if (player.character === 'Bear') {
       if (player.cash < 1000) {
-        socket.emit('trade:error', { message: 'Insufficient cash fee ($1,000) for insider leak.' });
+        socket.emit('trade:error', { message: 'Insufficient cash fee ($1,000).' });
         return;
       }
       player.cash -= 1000;
       player.powerUsed = true;
-      const mockRngVal = Math.random();
-      const prediction = mockRngVal > 0.5 ? "BULLISH BREAKOUT SHIFT" : "BEARISH CRASH DEPRECIATION";
-      socket.emit('power:success', { message: `INSIDER LEAK: Macro calculations indicate a ${prediction} phase next turn.` });
+      const prediction = Math.random() > 0.5 ? "BULLISH BREAKOUT SHIFT" : "BEARISH CRASH DEPRECIATION";
+      socket.emit('power:success', { message: `INSIDER LEAK: Data vectors show a ${prediction}.` });
     } 
     else if (player.character === 'Bull') {
       player.powerUsed = true;
       freezeTicker = targetTicker;
-      socket.emit('power:success', { message: `Hostile Takeover! Pricing variance frozen for ${targetTicker} until next turn.` });
+      socket.emit('power:success', { message: `Hostile Takeover! Variance frozen for ${targetTicker}.` });
     } 
     else if (player.character === 'Sheep') {
       player.cash += 2500;
       player.powerUsed = true;
-      socket.emit('power:success', { message: 'Safety Net deployed! $2,500 emergency cash credited to balance sheet.' });
+      socket.emit('power:success', { message: 'Emergency $2,500 cash injection credited.' });
     }
 
     broadcastGameState();
   });
 
-  socket.on('trade:buy', ({ ticker, shares }) => {
-    const player  = players.get(socket.id);
+  socket.on('trade:buy', ({ ticker, shares, playerId }) => {
+    const player = players.get(playerId);
     if (!player || !gameStarted) return;
     shares = Math.floor(Number(shares));
     if (!shares || shares <= 0) return;
 
-    const stock   = internalStocks.find(s => s.ticker === ticker);
+    const stock = internalStocks.find(s => s.ticker === ticker);
     if (!stock) return;
-    const cost    = stock.currentPrice * shares;
 
-    const projectedWorth = calcNetWorth(player);
-    if (projectedWorth < 500) {
-      socket.emit('trade:error', { message: 'Margin Limit Exceeded. Action denied by clearing broker.' });
+    if (calcNetWorth(player) < 500) {
+      socket.emit('trade:error', { message: 'Margin Limit Exceeded.' });
       return;
     }
 
     const holding = player.portfolio.find(h => h.ticker === ticker);
-    if (holding) {
-      holding.shares += shares;
-    } else {
-      player.portfolio.push({ ticker, shares });
-    }
+    if (holding) holding.shares += shares;
+    else player.portfolio.push({ ticker, shares });
 
-    player.cash -= cost;
+    player.cash -= (stock.currentPrice * shares);
     player.portfolio = player.portfolio.filter(h => h.shares !== 0);
 
     broadcastGameState();
-    socket.emit('trade:success', { action: 'buy / close short', ticker, shares, price: stock.currentPrice });
+    socket.emit('trade:success', { action: 'buy', ticker, shares, price: stock.currentPrice });
   });
 
-  socket.on('trade:sell', ({ ticker, shares }) => {
-    const player  = players.get(socket.id);
+  socket.on('trade:sell', ({ ticker, shares, playerId }) => {
+    const player = players.get(playerId);
     if (!player || !gameStarted) return;
     shares = Math.floor(Number(shares));
     if (!shares || shares <= 0) return;
 
-    const stock   = internalStocks.find(s => s.ticker === ticker);
+    const stock = internalStocks.find(s => s.ticker === ticker);
     if (!stock) return;
 
     const holding = player.portfolio.find(h => h.ticker === ticker);
     const currentlyOwned = holding ? holding.shares : 0;
 
     if (currentlyOwned - shares < -500) {
-      socket.emit('trade:error', { message: 'Short limit threshold hit. Maximum allowable short exposure is -500 shares.' });
+      socket.emit('trade:error', { message: 'Maximum short threshold hit (-500).' });
       return;
     }
 
-    if (holding) {
-      holding.shares -= shares;
-    } else {
-      player.portfolio.push({ ticker, shares: -shares });
-    }
+    if (holding) holding.shares -= shares;
+    else player.portfolio.push({ ticker, shares: -shares });
 
-    player.cash += stock.currentPrice * shares;
+    player.cash += (stock.currentPrice * shares);
     player.portfolio = player.portfolio.filter(h => h.shares !== 0);
 
     broadcastGameState();
-    socket.emit('trade:success', { action: 'sell / open short', ticker, shares, price: stock.currentPrice });
+    socket.emit('trade:success', { action: 'sell', ticker, shares, price: stock.currentPrice });
   });
 
   socket.on('disconnect', () => {
-    const player = players.get(socket.id);
-    if (player) {
-      players.delete(socket.id);
-      console.log(`[SOCKET] ${player.name} disconnected`);
-      broadcastLobby();
-      if (gameStarted) broadcastGameState();
-    }
+    console.log(`[SOCKET] Cleaned inactive link stream: ${socket.id}`);
   });
 });
 
