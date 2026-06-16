@@ -5,9 +5,15 @@ const { Server } = require('socket.io');
 
 const app    = express();
 const server = http.createServer(app);
-const io     = new Server(server, { cors: { origin: '*' } });
 
-// CONFIG: Reads the dynamic cloud port layer assigned by Render
+// Cross-origin Resource Policy update for production deployment links
+const io = new Server(server, { 
+  cors: { 
+    origin: '*',
+    methods: ["GET", "POST"]
+  } 
+});
+
 const PORT   = process.env.PORT || 3000;
 
 app.use(cors());
@@ -250,6 +256,7 @@ app.post('/api/market/advance', (req, res) => {
 io.on('connection', (socket) => {
   console.log(`[SOCKET] Connected: ${socket.id}`);
 
+  // Push immediate room feedback
   socket.emit('room:code', { roomCode: ROOM_CODE });
 
   socket.on('lobby:join', ({ name, roomCode }) => {
